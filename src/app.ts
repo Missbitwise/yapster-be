@@ -3,6 +3,9 @@ import cors from "cors";
 import helmet from "helmet";
 import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
+import userRoutes from "./app/user/user.routes";
+import locationRoutes from "./app/location/location.routes";
+import friendRoutes from "./app/friend/friend.routes";
 
 dotenv.config();
 
@@ -28,9 +31,9 @@ app.get("/", (_req: Request, res: Response) => {
   });
 });
 
-// Feature Routes
-// import authRoutes from "./modules/auth/auth.routes";
-// app.use("/api/v1/auth", authRoutes);
+app.use("/api/users", userRoutes);
+app.use("/api/location", locationRoutes);
+app.use("/api/friends", friendRoutes);
 
 // 404 Handler
 app.use((req: Request, res: Response) => {
