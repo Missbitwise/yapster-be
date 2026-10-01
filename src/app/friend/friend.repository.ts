@@ -264,21 +264,151 @@ export const findBlockedUser = async (
   return result.rows[0] || null;
 };
 
-export const createBlockedUser = async (
+export const blockUser = async (
+  blockerId: string,
+  blockedId: string
+) => {
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    // 1. Create block
+    const blockResult = await client.query(
+      `
+      INSERT INTO blocked_users (
+        blocker_id,
+        blocked_id
+      )
+      VALUES ($1, $2)
+      RETURNING *
+      `,
+      [blockerId, blockedId]
+    );
+
+    // 2. Remove blocker → blocked friendship
+    await client.query(
+      `
+      DELETE FROM friends
+      WHERE user_id = $1
+        AND friend_id = $2
+      `,
+      [blockerId, blockedId]
+    );
+
+    // 3. Remove blocked → blocker friendship
+    await client.query(
+      `
+      DELETE FROM friends
+      WHERE user_id = $1
+        AND friend_id = $2
+      `,
+      [blockedId, blockerId]
+    );
+
+    await client.query("COMMIT");
+
+    return blockResult.rows[0];
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+
+export const findAnyBlockBetweenUsers = async (
+  userId: string,
+  otherUserId: string
+) => {
+  const result = await pool.query(
+    `
+    SELECT *
+    FROM blocked_users
+    WHERE
+      (blocker_id = $1 AND blocked_id = $2)
+      OR
+      (blocker_id = $2 AND blocked_id = $1)
+    LIMIT 1
+    `,
+    [userId, otherUserId]
+  );
+
+  return result.rows[0] || null;
+};
+
+export const deleteBlockedUser = async (
   blockerId: string,
   blockedId: string
 ) => {
   const result = await pool.query(
     `
-    INSERT INTO blocked_users (
-      blocker_id,
-      blocked_id
-    )
-    VALUES ($1, $2)
+    DELETE FROM blocked_users
+    WHERE blocker_id = $1
+      AND blocked_id = $2
     RETURNING *
     `,
     [blockerId, blockedId]
   );
 
-  return result.rows[0];
+  return result.rows[0] || null;
+};
+
+export const findBlockedUsersByUserId = async (
+  userId: string
+) => {
+  const result = await pool.query(
+    `
+    SELECT
+      u.id,
+      u.name,
+      u.username,
+      u.profile_picture,
+      u.bio,
+      bu.created_at AS blocked_at
+    FROM blocked_users bu
+    INNER JOIN users u
+      ON u.id = bu.blocked_id
+    WHERE bu.blocker_id = $1
+    ORDER BY bu.created_at DESC
+    `,
+    [userId]
+  );
+
+  return result.rows;
+};
+
+export const areUsersFriends = async (
+  userId: string,
+  friendId: string
+) => {
+  const result = await pool.query(
+    `
+    SELECT 1
+    FROM friends
+    WHERE user_id = $1
+      AND friend_id = $2
+    LIMIT 1
+    `,
+    [userId, friendId]
+  );
+
+  return result.rows.length > 0;
+};
+
+export const findFriendIdsByUserId = async (
+  userId: string
+) => {
+  const result = await pool.query(
+    `
+    SELECT friend_id
+    FROM friends
+    WHERE user_id = $1
+    `,
+    [userId]
+  );
+
+  return result.rows.map(
+    (row) => row.friend_id
+  );
 };
