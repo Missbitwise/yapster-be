@@ -6,6 +6,8 @@ import {
   respondRequest,
   getMyFriends,
   blockUserController,
+  unblockUserController,
+  getBlockedUsersController,
 } from "./friend.controller.js";
 
 import { authenticate } from "../../common/middlewares/auth.middleware.js"
@@ -40,6 +42,18 @@ friendRoutes.post(
   "/block/:userId",
   authenticate,
   blockUserController
+);
+
+friendRoutes.delete(
+  "/block/:userId",
+  authenticate,
+  unblockUserController
+);
+
+friendRoutes.get(
+  "/blocked",
+  authenticate,
+  getBlockedUsersController
 );
 
 export default friendRoutes;
