@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { blockUser, getFriends, getReceivedFriendRequests, respondToFriendRequest, sendFriendRequest } from "./friend.service.js";
+import { blockUser, getBlockedUsers, getFriends, getReceivedFriendRequests, respondToFriendRequest, sendFriendRequest, unblockUser } from "./friend.service.js";
 
 export const sendRequest = async (
   req: Request,
@@ -203,6 +203,80 @@ export const blockUserController = async (
     return res.status(400).json({
       success: false,
       message: error.message || "Failed to block user",
+    });
+  }
+};
+
+export const unblockUserController = async (
+  req: Request,
+  res: Response
+) => {
+  try {
+    const blockerId = req.user?.userId;
+    const blockedId = req.params.userId as string;
+
+    if (!blockerId) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized",
+      });
+    }
+
+    if (!blockedId) {
+      return res.status(400).json({
+        success: false,
+        message: "User ID is required",
+      });
+    }
+
+    const result = await unblockUser(
+      blockerId,
+      blockedId
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "User unblocked successfully",
+      data: result,
+    });
+  } catch (error: any) {
+    console.error("UNBLOCK USER ERROR:", error);
+
+    return res.status(400).json({
+      success: false,
+      message: error.message || "Failed to unblock user",
+    });
+  }
+};
+
+export const getBlockedUsersController = async (
+  req: Request,
+  res: Response
+) => {
+  try {
+    const userId = req.user?.userId;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized",
+      });
+    }
+
+    const blockedUsers = await getBlockedUsers(userId);
+
+    return res.status(200).json({
+      success: true,
+      message: "Blocked users fetched successfully",
+      data: blockedUsers,
+    });
+  } catch (error: any) {
+    console.error("GET BLOCKED USERS ERROR:", error);
+
+    return res.status(500).json({
+      success: false,
+      message:
+        error.message || "Failed to fetch blocked users",
     });
   }
 };
