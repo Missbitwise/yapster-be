@@ -7,8 +7,11 @@ import {
   findFriendRequestById,
   acceptFriendRequest,
   findFriendsByUserId,
-  createBlockedUser,
+  blockUser as blockUserRepository,
   findBlockedUser,
+  findAnyBlockBetweenUsers,
+  deleteBlockedUser,
+  findBlockedUsersByUserId,
 } from "./friend.repository.js";
 
 export const sendFriendRequest = async (
@@ -23,6 +26,18 @@ export const sendFriendRequest = async (
 
   if (!receiver) {
     throw new Error("User not found");
+  }
+
+  // Check if either user has blocked the other
+  const existingBlock = await findAnyBlockBetweenUsers(
+    senderId,
+    receiverId
+  );
+
+  if (existingBlock) {
+    throw new Error(
+      "You cannot send a friend request to a blocked user"
+    );
   }
 
   const existingRequest = await findPendingFriendRequest(
@@ -95,19 +110,16 @@ export const blockUser = async (
   blockerId: string,
   blockedId: string
 ) => {
-  // Cannot block yourself
   if (blockerId === blockedId) {
     throw new Error("You cannot block yourself");
   }
 
-  // Check whether target user exists
   const user = await findUserById(blockedId);
 
   if (!user) {
     throw new Error("User not found");
   }
 
-  // Check if already blocked
   const existingBlock = await findBlockedUser(
     blockerId,
     blockedId
@@ -117,8 +129,37 @@ export const blockUser = async (
     throw new Error("User is already blocked");
   }
 
-  return await createBlockedUser(
+  return await blockUserRepository(
     blockerId,
     blockedId
   );
+};
+
+export const unblockUser = async (
+  blockerId: string,
+  blockedId: string
+) => {
+  if (blockerId === blockedId) {
+    throw new Error("You cannot unblock yourself");
+  }
+
+  const existingBlock = await findBlockedUser(
+    blockerId,
+    blockedId
+  );
+
+  if (!existingBlock) {
+    throw new Error("User is not blocked");
+  }
+
+  return await deleteBlockedUser(
+    blockerId,
+    blockedId
+  );
+};
+
+export const getBlockedUsers = async (
+  userId: string
+) => {
+  return await findBlockedUsersByUserId(userId);
 };
