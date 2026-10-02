@@ -121,17 +121,7 @@ export const updateFriendRequestStatus = async (
   return result.rows[0];
 };
 
-/*
- * Accept friend request using a PostgreSQL transaction.
- *
- * All three operations must succeed:
- *
- * 1. Update request → accepted
- * 2. Create receiver → sender friendship
- * 3. Create sender → receiver friendship
- *
- * If any operation fails, everything is rolled back.
- */
+
 export const acceptFriendRequest = async (
   requestId: string,
   receiverId: string
@@ -141,7 +131,6 @@ export const acceptFriendRequest = async (
   try {
     await client.query("BEGIN");
 
-    // 1. Get the pending request
     const requestResult = await client.query(
       `
       SELECT *
@@ -162,7 +151,6 @@ export const acceptFriendRequest = async (
       );
     }
 
-    // 2. Mark request as accepted
     const updateResult = await client.query(
       `
       UPDATE friend_requests
@@ -175,7 +163,6 @@ export const acceptFriendRequest = async (
       [requestId]
     );
 
-    // 3. Create receiver → sender friendship
     const friendship1Result = await client.query(
       `
       INSERT INTO friends (
@@ -188,7 +175,6 @@ export const acceptFriendRequest = async (
       [request.receiver_id, request.sender_id]
     );
 
-    // 4. Create sender → receiver friendship
     const friendship2Result = await client.query(
       `
       INSERT INTO friends (
@@ -201,7 +187,6 @@ export const acceptFriendRequest = async (
       [request.sender_id, request.receiver_id]
     );
 
-    // Everything succeeded
     await client.query("COMMIT");
 
     return {
@@ -212,12 +197,10 @@ export const acceptFriendRequest = async (
       ],
     };
   } catch (error) {
-    // Something failed → undo everything
     await client.query("ROLLBACK");
 
     throw error;
   } finally {
-    // Always return the connection to the pool
     client.release();
   }
 };
@@ -273,7 +256,6 @@ export const blockUser = async (
   try {
     await client.query("BEGIN");
 
-    // 1. Create block
     const blockResult = await client.query(
       `
       INSERT INTO blocked_users (
@@ -286,7 +268,6 @@ export const blockUser = async (
       [blockerId, blockedId]
     );
 
-    // 2. Remove blocker → blocked friendship
     await client.query(
       `
       DELETE FROM friends
@@ -296,7 +277,6 @@ export const blockUser = async (
       [blockerId, blockedId]
     );
 
-    // 3. Remove blocked → blocker friendship
     await client.query(
       `
       DELETE FROM friends
