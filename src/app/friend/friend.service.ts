@@ -28,7 +28,6 @@ export const sendFriendRequest = async (
     throw new Error("User not found");
   }
 
-  // Check if either user has blocked the other
   const existingBlock = await findAnyBlockBetweenUsers(
     senderId,
     receiverId
@@ -72,7 +71,6 @@ export const respondToFriendRequest = async (
     throw new Error("Friend request not found");
   }
 
-  // Only the receiver can accept/reject the request
   if (request.receiver_id !== userId) {
     throw new Error(
       "You are not allowed to respond to this friend request"
@@ -85,7 +83,6 @@ export const respondToFriendRequest = async (
     );
   }
 
-  // Reject request
   if (action === "reject") {
     return await updateFriendRequestStatus(
       requestId,
@@ -93,7 +90,6 @@ export const respondToFriendRequest = async (
     );
   }
 
-  // Accept request using PostgreSQL transaction
   return await acceptFriendRequest(
     requestId,
     userId
