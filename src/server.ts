@@ -1,8 +1,10 @@
 import dotenv from "dotenv";
-import app from "./app"
-import connectPostgres from "./db/postgres";
-import connectMongoDB from "./db/mongodb";
+import http from "http";
 
+import app from "./app.js";
+import connectPostgres from "./db/postgres.js";
+import connectMongoDB from "./db/mongodb.js";
+import { initializeWebSocket } from "./websocket/websocket.server.js";
 
 dotenv.config();
 
@@ -13,11 +15,21 @@ const startServer = async () => {
     await connectPostgres();
     await connectMongoDB();
 
-    app.listen(PORT, () => {
-      console.log(`🚀 Express server running on http://localhost:${PORT}`);
+    const server = http.createServer(app);
+
+    initializeWebSocket(server);
+
+    server.listen(PORT, () => {
+      console.log(
+        `🚀 Express server running on http://localhost:${PORT}`
+      );
     });
   } catch (error) {
-    console.error("❌ Failed to start server:", error);
+    console.error(
+      "❌ Failed to start server:",
+      error
+    );
+
     process.exit(1);
   }
 };
