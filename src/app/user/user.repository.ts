@@ -76,3 +76,19 @@ export const findUserById = async (userId: string) => {
 
   return result.rows[0] || null;
 };
+
+export const updateLastSeen = async (
+  userId: string
+) => {
+  const result = await pool.query(
+    `
+    UPDATE users
+    SET last_seen = CURRENT_TIMESTAMP
+    WHERE id = $1
+    RETURNING id, last_seen
+    `,
+    [userId]
+  );
+
+  return result.rows[0];
+};
