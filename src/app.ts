@@ -6,12 +6,12 @@ import dotenv from "dotenv";
 import userRoutes from "./app/user/user.routes";
 import locationRoutes from "./app/location/location.routes";
 import friendRoutes from "./app/friend/friend.routes";
+import messageRoutes from "./app/message/message.routes";
 
 dotenv.config();
 
 const app: Application = express();
 
-// Security & Parsing Middlewares
 app.use(helmet());
 app.use(
   cors({
@@ -23,7 +23,6 @@ app.use(cookieParser());
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 
-// Root Route
 app.get("/", (_req: Request, res: Response) => {
   res.status(200).json({
     success: true,
@@ -34,8 +33,8 @@ app.get("/", (_req: Request, res: Response) => {
 app.use("/api/users", userRoutes);
 app.use("/api/location", locationRoutes);
 app.use("/api/friends", friendRoutes);
+app.use("/api/messages", messageRoutes);
 
-// 404 Handler
 app.use((req: Request, res: Response) => {
   res.status(404).json({
     success: false,
@@ -43,7 +42,6 @@ app.use((req: Request, res: Response) => {
   });
 });
 
-// Global Error Handler
 app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
   console.error("Error:", err);
   const status = err.status || 500;
