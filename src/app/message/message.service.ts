@@ -1,6 +1,7 @@
 import {
   areUsersFriends,
   findAnyBlockBetweenUsers,
+ 
 } from "../friend/friend.repository.js";
 
 import {
@@ -11,6 +12,7 @@ import {
   editMessage,
   deleteMessageForMe,
   deleteMessageForEveryone,
+  countUnreadMessagesByUserId,
 } from "./message.repository.js";
 
 export const sendMessage = async (
@@ -248,3 +250,11 @@ export const deleteMessageForEveryoneService =
 
     return deletedMessage;
   };
+
+  export const getUnreadMessageCount = async (
+  userId: string
+) => {
+  return await countUnreadMessagesByUserId(
+    userId
+  );
+};
