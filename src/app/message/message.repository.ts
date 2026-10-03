@@ -132,3 +132,12 @@ export const deleteMessageForEveryone = async (
 
   return message;
 };
+
+export const countUnreadMessagesByUserId = async (
+  userId: string
+) => {
+  return await Message.countDocuments({
+    receiverId: userId,
+    status: { $ne: "read" },
+  });
+};
