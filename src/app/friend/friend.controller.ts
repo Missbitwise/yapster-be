@@ -1,5 +1,14 @@
 import { Request, Response } from "express";
-import { blockUser, getBlockedUsers, getFriends, getReceivedFriendRequests, respondToFriendRequest, sendFriendRequest, unblockUser } from "./friend.service.js";
+
+import {
+  blockUser,
+  getBlockedUsers,
+  getFriends,
+  getReceivedFriendRequests,
+  respondToFriendRequest,
+  sendFriendRequest,
+  unblockUser,
+} from "./friend.service.js";
 
 export const sendRequest = async (
   req: Request,
@@ -7,7 +16,8 @@ export const sendRequest = async (
 ) => {
   try {
     const senderId = req.user?.userId;
-    const receiverId = req.params.receiverId as string;
+    const receiverId =
+      req.params.receiverId as string;
 
     if (!senderId) {
       return res.status(401).json({
@@ -19,26 +29,34 @@ export const sendRequest = async (
     if (!receiverId) {
       return res.status(400).json({
         success: false,
-        message: "Receiver ID is required",
+        message:
+          "Receiver ID is required",
       });
     }
 
-    const request = await sendFriendRequest(
-      senderId,
-      receiverId
-    );
+    const request =
+      await sendFriendRequest(
+        senderId,
+        receiverId
+      );
 
     return res.status(201).json({
       success: true,
-      message: "Friend request sent successfully",
+      message:
+        "Friend request sent successfully",
       data: request,
     });
   } catch (error: any) {
-    console.error("SEND FRIEND REQUEST ERROR:", error);
+    console.error(
+      "SEND FRIEND REQUEST ERROR:",
+      error
+    );
 
     return res.status(400).json({
       success: false,
-      message: error.message || "Failed to send friend request",
+      message:
+        error.message ||
+        "Failed to send friend request",
     });
   }
 };
@@ -48,7 +66,8 @@ export const getReceivedRequests = async (
   res: Response
 ) => {
   try {
-    const userId = req.user?.userId;
+    const userId =
+      req.user?.userId;
 
     if (!userId) {
       return res.status(401).json({
@@ -57,19 +76,28 @@ export const getReceivedRequests = async (
       });
     }
 
-    const requests = await getReceivedFriendRequests(userId);
+    const requests =
+      await getReceivedFriendRequests(
+        userId
+      );
 
     return res.status(200).json({
       success: true,
-      message: "Friend requests fetched successfully",
+      message:
+        "Friend requests fetched successfully",
       data: requests,
     });
   } catch (error: any) {
-    console.error("GET FRIEND REQUESTS ERROR:", error);
+    console.error(
+      "GET FRIEND REQUESTS ERROR:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
-      message: error.message || "Failed to fetch friend requests",
+      message:
+        error.message ||
+        "Failed to fetch friend requests",
     });
   }
 };
@@ -79,8 +107,11 @@ export const respondRequest = async (
   res: Response
 ) => {
   try {
-    const userId = req.user?.userId;
-    const requestId = req.params.requestId as string;
+    const userId =
+      req.user?.userId;
+
+    const requestId =
+      req.params.requestId as string;
 
     const { action } = req.body;
 
@@ -94,22 +125,28 @@ export const respondRequest = async (
     if (!requestId) {
       return res.status(400).json({
         success: false,
-        message: "Request ID is required",
+        message:
+          "Request ID is required",
       });
     }
 
-    if (action !== "accept" && action !== "reject") {
+    if (
+      action !== "accept" &&
+      action !== "reject"
+    ) {
       return res.status(400).json({
         success: false,
-        message: "Action must be accept or reject",
+        message:
+          "Action must be accept or reject",
       });
     }
 
-    const result = await respondToFriendRequest(
-      userId,
-      requestId,
-      action
-    );
+    const result =
+      await respondToFriendRequest(
+        userId,
+        requestId,
+        action
+      );
 
     return res.status(200).json({
       success: true,
@@ -139,7 +176,8 @@ export const getMyFriends = async (
   res: Response
 ) => {
   try {
-    const userId = req.user?.userId;
+    const userId =
+      req.user?.userId;
 
     if (!userId) {
       return res.status(401).json({
@@ -148,19 +186,26 @@ export const getMyFriends = async (
       });
     }
 
-    const friends = await getFriends(userId);
+    const friends =
+      await getFriends(userId);
 
     return res.status(200).json({
       success: true,
-      message: "Friends fetched successfully",
+      message:
+        "Friends fetched successfully",
       data: friends,
     });
   } catch (error: any) {
-    console.error("GET FRIENDS ERROR:", error);
+    console.error(
+      "GET FRIENDS ERROR:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
-      message: error.message || "Failed to fetch friends",
+      message:
+        error.message ||
+        "Failed to fetch friends",
     });
   }
 };
@@ -170,8 +215,11 @@ export const blockUserController = async (
   res: Response
 ) => {
   try {
-    const blockerId = req.user?.userId;
-    const blockedId = req.params.userId as string;
+    const blockerId =
+      req.user?.userId;
+
+    const blockedId =
+      req.params.userId as string;
 
     if (!blockerId) {
       return res.status(401).json({
@@ -183,26 +231,34 @@ export const blockUserController = async (
     if (!blockedId) {
       return res.status(400).json({
         success: false,
-        message: "User ID is required",
+        message:
+          "User ID is required",
       });
     }
 
-    const blockedUser = await blockUser(
-      blockerId,
-      blockedId
-    );
+    const blockedUser =
+      await blockUser(
+        blockerId,
+        blockedId
+      );
 
     return res.status(201).json({
       success: true,
-      message: "User blocked successfully",
+      message:
+        "User blocked successfully",
       data: blockedUser,
     });
   } catch (error: any) {
-    console.error("BLOCK USER ERROR:", error);
+    console.error(
+      "BLOCK USER ERROR:",
+      error
+    );
 
     return res.status(400).json({
       success: false,
-      message: error.message || "Failed to block user",
+      message:
+        error.message ||
+        "Failed to block user",
     });
   }
 };
@@ -212,8 +268,11 @@ export const unblockUserController = async (
   res: Response
 ) => {
   try {
-    const blockerId = req.user?.userId;
-    const blockedId = req.params.userId as string;
+    const blockerId =
+      req.user?.userId;
+
+    const blockedId =
+      req.params.userId as string;
 
     if (!blockerId) {
       return res.status(401).json({
@@ -225,58 +284,76 @@ export const unblockUserController = async (
     if (!blockedId) {
       return res.status(400).json({
         success: false,
-        message: "User ID is required",
+        message:
+          "User ID is required",
       });
     }
 
-    const result = await unblockUser(
-      blockerId,
-      blockedId
-    );
+    const result =
+      await unblockUser(
+        blockerId,
+        blockedId
+      );
 
     return res.status(200).json({
       success: true,
-      message: "User unblocked successfully",
+      message:
+        "User unblocked successfully",
       data: result,
     });
   } catch (error: any) {
-    console.error("UNBLOCK USER ERROR:", error);
+    console.error(
+      "UNBLOCK USER ERROR:",
+      error
+    );
 
     return res.status(400).json({
       success: false,
-      message: error.message || "Failed to unblock user",
+      message:
+        error.message ||
+        "Failed to unblock user",
     });
   }
 };
 
-export const getBlockedUsersController = async (
-  req: Request,
-  res: Response
-) => {
-  try {
-    const userId = req.user?.userId;
+export const getBlockedUsersController =
+  async (
+    req: Request,
+    res: Response
+  ) => {
+    try {
+      const userId =
+        req.user?.userId;
 
-    if (!userId) {
-      return res.status(401).json({
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          message: "Unauthorized",
+        });
+      }
+
+      const blockedUsers =
+        await getBlockedUsers(
+          userId
+        );
+
+      return res.status(200).json({
+        success: true,
+        message:
+          "Blocked users fetched successfully",
+        data: blockedUsers,
+      });
+    } catch (error: any) {
+      console.error(
+        "GET BLOCKED USERS ERROR:",
+        error
+      );
+
+      return res.status(500).json({
         success: false,
-        message: "Unauthorized",
+        message:
+          error.message ||
+          "Failed to fetch blocked users",
       });
     }
-
-    const blockedUsers = await getBlockedUsers(userId);
-
-    return res.status(200).json({
-      success: true,
-      message: "Blocked users fetched successfully",
-      data: blockedUsers,
-    });
-  } catch (error: any) {
-    console.error("GET BLOCKED USERS ERROR:", error);
-
-    return res.status(500).json({
-      success: false,
-      message:
-        error.message || "Failed to fetch blocked users",
-    });
-  }
-};
+  };
