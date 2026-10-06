@@ -141,3 +141,31 @@ export const countUnreadMessagesByUserId = async (
     status: { $ne: "read" },
   });
 };
+
+export const markMessagesAsDeliveredForReceiver = async (
+  receiverId: string
+) => {
+  const sentMessages = await Message.find({
+    receiverId,
+    status: "sent",
+  }).lean();
+
+  if (sentMessages.length === 0) {
+    return [];
+  }
+
+  await Message.updateMany(
+    {
+      receiverId,
+      status: "sent",
+    },
+    {
+      $set: { status: "delivered" },
+    }
+  );
+
+  return sentMessages.map((msg) => ({
+    ...msg,
+    status: "delivered" as const,
+  }));
+};

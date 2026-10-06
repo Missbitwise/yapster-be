@@ -65,6 +65,7 @@ export const findUserById = async (userId: string) => {
       email,
       profile_picture,
       bio,
+      last_seen,
       created_at,
       updated_at
     FROM users

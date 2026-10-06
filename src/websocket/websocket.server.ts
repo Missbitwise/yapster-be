@@ -12,7 +12,12 @@ import {
   getUnreadMessageCount,
 } from "../app/message/message.service.js";
 
-import { findFriendIdsByUserId } from "../app/friend/friend.repository.js";
+import {
+  findFriendIdsByUserId,
+  findFriendsByUserId,
+} from "../app/friend/friend.repository.js";
+
+import { markMessagesAsDeliveredForReceiver } from "../app/message/message.repository.js";
 
 import { updateLastSeen } from "../app/user/user.repository.js";
 
@@ -24,9 +29,30 @@ interface JwtPayload {
 
 interface AuthenticatedSocket extends WebSocket {
   userId?: string;
+  isAlive?: boolean;
 }
 
 const clients = new Map<string, Set<AuthenticatedSocket>>();
+
+const isUserOnline = (userId: string): boolean => {
+  const userSockets = clients.get(userId);
+  if (!userSockets) return false;
+
+  for (const s of Array.from(userSockets)) {
+    if (s.readyState === WebSocket.OPEN) {
+      return true;
+    } else {
+      userSockets.delete(s);
+    }
+  }
+
+  if (userSockets.size === 0) {
+    clients.delete(userId);
+    return false;
+  }
+
+  return false;
+};
 
 const addClient = (
   userId: string,
@@ -43,14 +69,22 @@ const addClient = (
 const removeClient = (
   userId: string,
   socket: AuthenticatedSocket
-) => {
+): boolean => {
   const userSockets = clients.get(userId);
 
   if (!userSockets) {
-    return false;
+    clients.delete(userId);
+    return true;
   }
 
   userSockets.delete(socket);
+
+  // Clean up any sockets that are closed or closing
+  for (const s of Array.from(userSockets)) {
+    if (s.readyState !== WebSocket.OPEN) {
+      userSockets.delete(s);
+    }
+  }
 
   if (userSockets.size === 0) {
     clients.delete(userId);
@@ -60,13 +94,28 @@ const removeClient = (
   return false;
 };
 
-const getUserSockets = (userId: string) => {
-  return clients.get(userId) || new Set();
+const getUserSockets = (userId: string): Set<AuthenticatedSocket> => {
+  const userSockets = clients.get(userId);
+  if (!userSockets) return new Set<AuthenticatedSocket>();
+
+  for (const s of Array.from(userSockets)) {
+    if (s.readyState !== WebSocket.OPEN) {
+      userSockets.delete(s);
+    }
+  }
+
+  if (userSockets.size === 0) {
+    clients.delete(userId);
+    return new Set<AuthenticatedSocket>();
+  }
+
+  return userSockets;
 };
 
 const notifyFriends = async (
   userId: string,
-  status: "online" | "offline"
+  status: "online" | "offline",
+  lastSeen?: string | Date | null
 ) => {
   const friendIds = await findFriendIdsByUserId(userId);
 
@@ -80,6 +129,9 @@ const notifyFriends = async (
             type: "presence",
             userId,
             status,
+            lastSeen: lastSeen
+              ? new Date(lastSeen).toISOString()
+              : null,
           })
         );
       }
@@ -128,9 +180,13 @@ export const initializeWebSocket = (server: Server) => {
         ) as JwtPayload;
 
         socket.userId = decoded.userId;
+        socket.isAlive = true;
+        socket.on("pong", () => {
+          socket.isAlive = true;
+        });
 
         const wasOffline =
-          !clients.has(decoded.userId);
+          !isUserOnline(decoded.userId);
 
         addClient(
           decoded.userId,
@@ -156,6 +212,39 @@ export const initializeWebSocket = (server: Server) => {
           })
         );
 
+        // Send current presence of all friends to the connecting user
+        const friends = await findFriendsByUserId(decoded.userId);
+        for (const friend of friends) {
+          const isFriendOnline = isUserOnline(friend.id);
+          socket.send(
+            JSON.stringify({
+              type: "presence",
+              userId: friend.id,
+              status: isFriendOnline ? "online" : "offline",
+              lastSeen: friend.last_seen
+                ? new Date(friend.last_seen).toISOString()
+                : null,
+            })
+          );
+        }
+
+        // Deliver any pending "sent" messages to this user and notify senders
+        const newlyDelivered =
+          await markMessagesAsDeliveredForReceiver(decoded.userId);
+        for (const delMsg of newlyDelivered) {
+          const senderSockets = getUserSockets(delMsg.senderId);
+          for (const senderSocket of senderSockets) {
+            if (senderSocket.readyState === WebSocket.OPEN) {
+              senderSocket.send(
+                JSON.stringify({
+                  type: "message",
+                  data: delMsg,
+                })
+              );
+            }
+          }
+        }
+
         const unreadCount =
           await getUnreadMessageCount(
             decoded.userId
@@ -174,9 +263,10 @@ export const initializeWebSocket = (server: Server) => {
           "message",
           async (data) => {
             try {
-              const message = JSON.parse(
-                data.toString()
-              );
+              const message =
+                JSON.parse(
+                  data.toString()
+                );
 
               const senderId =
                 socket.userId;
@@ -185,14 +275,18 @@ export const initializeWebSocket = (server: Server) => {
                 socket.send(
                   JSON.stringify({
                     type: "error",
-                    message: "Unauthorized",
+                    message:
+                      "Unauthorized",
                   })
                 );
 
                 return;
               }
 
-              if (message.type === "typing") {
+              if (
+                message.type ===
+                "typing"
+              ) {
                 const { receiverId } =
                   message;
 
@@ -223,7 +317,8 @@ export const initializeWebSocket = (server: Server) => {
                     receiverSocket.send(
                       JSON.stringify({
                         type: "typing",
-                        userId: senderId,
+                        userId:
+                          senderId,
                       })
                     );
                   }
@@ -267,7 +362,8 @@ export const initializeWebSocket = (server: Server) => {
                       JSON.stringify({
                         type:
                           "stopped_typing",
-                        userId: senderId,
+                        userId:
+                          senderId,
                       })
                     );
                   }
@@ -276,7 +372,10 @@ export const initializeWebSocket = (server: Server) => {
                 return;
               }
 
-              if (message.type === "message") {
+              if (
+                message.type ===
+                "message"
+              ) {
                 const {
                   receiverId,
                   content,
@@ -320,7 +419,8 @@ export const initializeWebSocket = (server: Server) => {
                   );
 
                 const receiverIsOnline =
-                  receiverSockets.size > 0;
+                  receiverSockets.size >
+                  0;
 
                 if (receiverIsOnline) {
                   const deliveredMessage =
@@ -332,7 +432,7 @@ export const initializeWebSocket = (server: Server) => {
 
                   if (deliveredMessage) {
                     messageToSend =
-                      deliveredMessage.toObject();
+                      deliveredMessage;
                   }
 
                   for (
@@ -344,7 +444,8 @@ export const initializeWebSocket = (server: Server) => {
                     ) {
                       receiverSocket.send(
                         JSON.stringify({
-                          type: "message",
+                          type:
+                            "message",
                           data:
                             messageToSend,
                         })
@@ -356,16 +457,20 @@ export const initializeWebSocket = (server: Server) => {
                 socket.send(
                   JSON.stringify({
                     type: "message",
-                    data: messageToSend,
+                    data:
+                      messageToSend,
                   })
                 );
 
                 return;
               }
 
-              if (message.type === "read") {
-                const { messageId } =
-                  message;
+              if (
+                message.type === "read"
+              ) {
+                const {
+                  messageId,
+                } = message;
 
                 if (!messageId) {
                   socket.send(
@@ -420,7 +525,8 @@ export const initializeWebSocket = (server: Server) => {
 
                 const messageReadEvent =
                   JSON.stringify({
-                    type: "message_read",
+                    type:
+                      "message_read",
                     data:
                       updatedMessage,
                   });
@@ -450,7 +556,10 @@ export const initializeWebSocket = (server: Server) => {
                 return;
               }
 
-              if (message.type === "edit") {
+              if (
+                message.type ===
+                "edit"
+              ) {
                 const {
                   messageId,
                   content,
@@ -486,7 +595,9 @@ export const initializeWebSocket = (server: Server) => {
                       updatedMessage,
                   });
 
-                socket.send(editEvent);
+                socket.send(
+                  editEvent
+                );
 
                 const receiverSockets =
                   getUserSockets(
@@ -513,8 +624,9 @@ export const initializeWebSocket = (server: Server) => {
                 message.type ===
                 "delete_for_me"
               ) {
-                const { messageId } =
-                  message;
+                const {
+                  messageId,
+                } = message;
 
                 if (!messageId) {
                   socket.send(
@@ -552,8 +664,9 @@ export const initializeWebSocket = (server: Server) => {
                 message.type ===
                 "delete_for_everyone"
               ) {
-                const { messageId } =
-                  message;
+                const {
+                  messageId,
+                } = message;
 
                 if (!messageId) {
                   socket.send(
@@ -647,13 +760,22 @@ export const initializeWebSocket = (server: Server) => {
               );
 
             if (isFullyOffline) {
-              await updateLastSeen(
-                socket.userId
-              );
+              const updatedUser =
+                await updateLastSeen(
+                  socket.userId
+                );
+
+              const lastSeenIso =
+                updatedUser?.last_seen
+                  ? new Date(
+                      updatedUser.last_seen
+                    ).toISOString()
+                  : new Date().toISOString();
 
               await notifyFriends(
                 socket.userId,
-                "offline"
+                "offline",
+                lastSeenIso
               );
             }
 

@@ -216,6 +216,7 @@ export const findFriendsByUserId = async (
       u.username,
       u.profile_picture,
       u.bio,
+      u.last_seen,
       f.created_at AS friends_since
     FROM friends f
     INNER JOIN users u
