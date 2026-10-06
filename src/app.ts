@@ -3,10 +3,10 @@ import cors from "cors";
 import helmet from "helmet";
 import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
-import userRoutes from "./app/user/user.routes";
-import locationRoutes from "./app/location/location.routes";
-import friendRoutes from "./app/friend/friend.routes";
-import messageRoutes from "./app/message/message.routes";
+import userRoutes from "./app/user/user.routes.js";
+import locationRoutes from "./app/location/location.routes.js";
+import friendRoutes from "./app/friend/friend.routes.js";
+import messageRoutes from "./app/message/message.routes.js";
 
 dotenv.config();
 
