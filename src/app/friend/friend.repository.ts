@@ -86,6 +86,51 @@ export const findPendingReceivedRequests = async (
   return result.rows;
 };
 
+export const findPendingSentRequests = async (
+  userId: string
+) => {
+  const result = await pool.query(
+    `
+    SELECT
+      fr.id,
+      fr.receiver_id,
+      u.name,
+      u.username,
+      u.profile_picture,
+      u.bio,
+      fr.status,
+      fr.created_at
+    FROM friend_requests fr
+    INNER JOIN users u
+      ON u.id = fr.receiver_id
+    WHERE fr.sender_id = $1
+      AND fr.status = 'pending'
+    ORDER BY fr.created_at DESC
+    `,
+    [userId]
+  );
+
+  return result.rows;
+};
+
+export const cancelFriendRequest = async (
+  senderId: string,
+  requestIdOrReceiverId: string
+) => {
+  const result = await pool.query(
+    `
+    DELETE FROM friend_requests
+    WHERE sender_id = $1
+      AND status = 'pending'
+      AND (id::text = $2 OR receiver_id::text = $2)
+    RETURNING *
+    `,
+    [senderId, requestIdOrReceiverId]
+  );
+
+  return result.rows[0] || null;
+};
+
 export const findFriendRequestById = async (
   requestId: string
 ) => {
@@ -264,32 +309,18 @@ export const blockUser = async (
         blocked_id
       )
       VALUES ($1, $2)
+      ON CONFLICT (blocker_id, blocked_id) DO NOTHING
       RETURNING *
       `,
       [blockerId, blockedId]
     );
 
-    await client.query(
-      `
-      DELETE FROM friends
-      WHERE user_id = $1
-        AND friend_id = $2
-      `,
-      [blockerId, blockedId]
-    );
-
-    await client.query(
-      `
-      DELETE FROM friends
-      WHERE user_id = $1
-        AND friend_id = $2
-      `,
-      [blockedId, blockerId]
-    );
+    // Note: Do NOT delete records from friends table.
+    // Keeping the friendship ensures that when unblocked, the friend and conversation remain intact.
 
     await client.query("COMMIT");
 
-    return blockResult.rows[0];
+    return blockResult.rows[0] || { blocker_id: blockerId, blocked_id: blockedId };
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;
@@ -322,17 +353,43 @@ export const deleteBlockedUser = async (
   blockerId: string,
   blockedId: string
 ) => {
-  const result = await pool.query(
-    `
-    DELETE FROM blocked_users
-    WHERE blocker_id = $1
-      AND blocked_id = $2
-    RETURNING *
-    `,
-    [blockerId, blockedId]
-  );
+  const client = await pool.connect();
 
-  return result.rows[0] || null;
+  try {
+    await client.query("BEGIN");
+
+    const result = await client.query(
+      `
+      DELETE FROM blocked_users
+      WHERE blocker_id = $1
+        AND blocked_id = $2
+      RETURNING *
+      `,
+      [blockerId, blockedId]
+    );
+
+    // Restore mutual friendship so they are friends again and can continue chatting immediately
+    await client.query(
+      `
+      INSERT INTO friends (
+        user_id,
+        friend_id
+      )
+      VALUES ($1, $2), ($2, $1)
+      ON CONFLICT (user_id, friend_id) DO NOTHING
+      `,
+      [blockerId, blockedId]
+    );
+
+    await client.query("COMMIT");
+
+    return result.rows[0] || null;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 };
 
 export const findBlockedUsersByUserId = async (
