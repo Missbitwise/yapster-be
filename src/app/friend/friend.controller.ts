@@ -5,6 +5,8 @@ import {
   getBlockedUsers,
   getFriends,
   getReceivedFriendRequests,
+  getSentFriendRequests,
+  cancelSentFriendRequest,
   respondToFriendRequest,
   sendFriendRequest,
   unblockUser,
@@ -98,6 +100,74 @@ export const getReceivedRequests = async (
       message:
         error.message ||
         "Failed to fetch friend requests",
+    });
+  }
+};
+
+export const getSentRequests = async (
+  req: Request,
+  res: Response
+) => {
+  try {
+    const userId = req.user?.userId;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized",
+      });
+    }
+
+    const requests = await getSentFriendRequests(userId);
+
+    return res.status(200).json({
+      success: true,
+      message: "Sent friend requests fetched successfully",
+      data: requests,
+    });
+  } catch (error: any) {
+    console.error("GET SENT FRIEND REQUESTS ERROR:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to fetch sent friend requests",
+    });
+  }
+};
+
+export const cancelRequest = async (
+  req: Request,
+  res: Response
+) => {
+  try {
+    const senderId = req.user?.userId;
+    const requestId = req.params.requestId as string;
+
+    if (!senderId) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized",
+      });
+    }
+
+    if (!requestId) {
+      return res.status(400).json({
+        success: false,
+        message: "Request ID is required",
+      });
+    }
+
+    const result = await cancelSentFriendRequest(senderId, requestId);
+
+    return res.status(200).json({
+      success: true,
+      message: "Friend request cancelled successfully",
+      data: result,
+    });
+  } catch (error: any) {
+    console.error("CANCEL FRIEND REQUEST ERROR:", error);
+    return res.status(400).json({
+      success: false,
+      message: error.message || "Failed to cancel friend request",
     });
   }
 };
