@@ -3,6 +3,8 @@ import { Router } from "express";
 import {
   sendRequest,
   getReceivedRequests,
+  getSentRequests,
+  cancelRequest,
   respondRequest,
   getMyFriends,
   blockUserController,
@@ -24,6 +26,18 @@ friendRoutes.get(
   "/requests",
   authenticate,
   getReceivedRequests
+);
+
+friendRoutes.get(
+  "/requests/sent",
+  authenticate,
+  getSentRequests
+);
+
+friendRoutes.delete(
+  "/requests/:requestId",
+  authenticate,
+  cancelRequest
 );
 
 friendRoutes.patch(
