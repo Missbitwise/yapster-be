@@ -3,6 +3,8 @@ import {
   findPendingFriendRequest,
   createFriendRequest,
   findPendingReceivedRequests,
+  findPendingSentRequests,
+  cancelFriendRequest,
   updateFriendRequestStatus,
   findFriendRequestById,
   acceptFriendRequest,
@@ -58,6 +60,28 @@ export const getReceivedFriendRequests = async (
   userId: string
 ) => {
   return await findPendingReceivedRequests(userId);
+};
+
+export const getSentFriendRequests = async (
+  userId: string
+) => {
+  return await findPendingSentRequests(userId);
+};
+
+export const cancelSentFriendRequest = async (
+  senderId: string,
+  requestIdOrReceiverId: string
+) => {
+  const deleted = await cancelFriendRequest(
+    senderId,
+    requestIdOrReceiverId
+  );
+
+  if (!deleted) {
+    throw new Error("Friend request not found or already processed");
+  }
+
+  return deleted;
 };
 
 export const respondToFriendRequest = async (
