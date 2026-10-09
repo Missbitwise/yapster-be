@@ -1,7 +1,7 @@
 import {
   areUsersFriends,
-  findAnyBlockBetweenUsers,
- 
+  findBlockedUser,
+  findBlockedUsersByUserId,
 } from "../friend/friend.repository.js";
 
 import {
@@ -13,6 +13,8 @@ import {
   deleteMessageForMe,
   deleteMessageForEveryone,
   countUnreadMessagesByUserId,
+  markConversationMessagesAsRead,
+  getUnreadCountsGroupedBySender,
 } from "./message.repository.js";
 
 export const sendMessage = async (
@@ -44,15 +46,34 @@ export const sendMessage = async (
     );
   }
 
-  const existingBlock =
-    await findAnyBlockBetweenUsers(
-      senderId,
-      receiverId
-    );
+  // Check if sender has blocked receiver
+  const senderBlockedReceiver = await findBlockedUser(
+    senderId,
+    receiverId
+  );
 
-  if (existingBlock) {
+  if (senderBlockedReceiver) {
     throw new Error(
-      "You cannot send messages to a blocked user"
+      "You have blocked this user. Unblock them to send a message."
+    );
+  }
+
+  // Check if receiver has blocked sender
+  const receiverBlockedSender = await findBlockedUser(
+    receiverId,
+    senderId
+  );
+
+  if (receiverBlockedSender) {
+    // WhatsApp behavior: Blocked sender CAN send messages.
+    // Message is saved with status 'sent', but deletedFor receiver so receiver never receives or sees it.
+    // Message stays permanently at 'sent' (single tick) for sender.
+    return await createMessage(
+      conversationId,
+      senderId,
+      receiverId,
+      content.trim(),
+      [receiverId]
     );
   }
 
@@ -251,10 +272,31 @@ export const deleteMessageForEveryoneService =
     return deletedMessage;
   };
 
-  export const getUnreadMessageCount = async (
+export const getUnreadMessageCount = async (
   userId: string
 ) => {
+  const blockedUsers = await findBlockedUsersByUserId(userId);
+  const blockedIds = blockedUsers.map((b: any) => b.id);
   return await countUnreadMessagesByUserId(
+    userId,
+    blockedIds
+  );
+};
+
+export const markConversationAsReadService = async (
+  conversationId: string,
+  userId: string
+) => {
+  return await markConversationMessagesAsRead(
+    conversationId,
     userId
   );
+};
+
+export const getUnreadCountsGroupedBySenderService = async (
+  userId: string
+) => {
+  const blockedUsers = await findBlockedUsersByUserId(userId);
+  const blockedIds = blockedUsers.map((b: any) => String(b.id));
+  return await getUnreadCountsGroupedBySender(userId, blockedIds);
 };

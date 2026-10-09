@@ -261,7 +261,21 @@ export const findFriendsByUserId = async (
       u.username,
       u.profile_picture,
       u.bio,
-      u.last_seen,
+      CASE
+        WHEN EXISTS (
+          SELECT 1 FROM blocked_users bu
+          WHERE bu.blocker_id = u.id AND bu.blocked_id = $1
+        ) THEN NULL
+        ELSE u.last_seen
+      END AS last_seen,
+      EXISTS (
+        SELECT 1 FROM blocked_users bu
+        WHERE bu.blocker_id = u.id AND bu.blocked_id = $1
+      ) AS is_blocked_by,
+      EXISTS (
+        SELECT 1 FROM blocked_users bu
+        WHERE bu.blocker_id = $1 AND bu.blocked_id = u.id
+      ) AS is_blocked,
       f.created_at AS friends_since
     FROM friends f
     INNER JOIN users u

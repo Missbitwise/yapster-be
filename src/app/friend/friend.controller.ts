@@ -12,6 +12,8 @@ import {
   unblockUser,
 } from "./friend.service.js";
 
+import { notifyBlockStatusChange } from "../../websocket/websocket.server.js";
+
 export const sendRequest = async (
   req: Request,
   res: Response
@@ -312,6 +314,12 @@ export const blockUserController = async (
         blockedId
       );
 
+    try {
+      await notifyBlockStatusChange(blockerId, blockedId, true);
+    } catch (wsErr) {
+      console.error("Failed to notify block status over WS:", wsErr);
+    }
+
     return res.status(201).json({
       success: true,
       message:
@@ -364,6 +372,12 @@ export const unblockUserController = async (
         blockerId,
         blockedId
       );
+
+    try {
+      await notifyBlockStatusChange(blockerId, blockedId, false);
+    } catch (wsErr) {
+      console.error("Failed to notify unblock status over WS:", wsErr);
+    }
 
     return res.status(200).json({
       success: true,

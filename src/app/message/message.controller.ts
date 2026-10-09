@@ -4,9 +4,13 @@ import {
   sendMessage,
   getConversationMessages,
   updateStatus,
+  markConversationAsReadService,
+  getUnreadMessageCount,
+  getUnreadCountsGroupedBySenderService,
 } from "./message.service.js";
 
 import { generateConversationId } from "../../common/utils/conversation.js";
+import { broadcastWebSocketMessage } from "../../websocket/websocket.server.js";
 
 export const sendMessageController = async (
   req: Request,
@@ -50,6 +54,12 @@ export const sendMessageController = async (
       receiverId,
       content
     );
+
+    try {
+      await broadcastWebSocketMessage(message);
+    } catch (wsErr) {
+      console.error("Failed to broadcast WS message:", wsErr);
+    }
 
     return res.status(201).json({
       success: true,
@@ -228,3 +238,89 @@ export const updateMessageStatusController =
       });
     }
   };
+
+export const markConversationAsReadController = async (
+  req: Request,
+  res: Response
+) => {
+  try {
+    const userId = req.user?.userId;
+    const contactId = req.params.contactId as string;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized",
+      });
+    }
+
+    if (!contactId) {
+      return res.status(400).json({
+        success: false,
+        message: "Contact ID is required",
+      });
+    }
+
+    const conversationId = generateConversationId(userId, contactId);
+    const readMessages = await markConversationAsReadService(
+      conversationId,
+      userId
+    );
+
+    const totalUnread = await getUnreadMessageCount(userId);
+
+    return res.status(200).json({
+      success: true,
+      message: "Conversation marked as read",
+      data: {
+        readCount: readMessages.length,
+        totalUnread,
+      },
+    });
+  } catch (error: any) {
+    console.error("MARK CONVERSATION READ ERROR:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to mark conversation as read",
+    });
+  }
+};
+
+export const getUnreadSummaryController = async (
+  req: Request,
+  res: Response
+) => {
+  try {
+    const userId = req.user?.userId;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized",
+      });
+    }
+
+    const unreadBySender = await getUnreadCountsGroupedBySenderService(userId);
+    const unreadSendersCount = Object.keys(unreadBySender).length;
+    const totalUnread = Object.values(unreadBySender).reduce(
+      (a, b) => a + b,
+      0
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "Unread summary fetched successfully",
+      data: {
+        unreadBySender,
+        unreadSendersCount,
+        totalUnread,
+      },
+    });
+  } catch (error: any) {
+    console.error("GET UNREAD SUMMARY ERROR:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to fetch unread summary",
+    });
+  }
+};

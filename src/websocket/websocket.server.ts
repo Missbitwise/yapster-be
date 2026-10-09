@@ -10,11 +10,15 @@ import {
   deleteMessageForMeService,
   deleteMessageForEveryoneService,
   getUnreadMessageCount,
+  markConversationAsReadService,
+  getUnreadCountsGroupedBySenderService,
 } from "../app/message/message.service.js";
 
 import {
   findFriendIdsByUserId,
   findFriendsByUserId,
+  findBlockedUser,
+  findBlockedUsersByUserId,
 } from "../app/friend/friend.repository.js";
 
 import { markMessagesAsDeliveredForReceiver } from "../app/message/message.repository.js";
@@ -118,8 +122,15 @@ const notifyFriends = async (
   lastSeen?: string | Date | null
 ) => {
   const friendIds = await findFriendIdsByUserId(userId);
+  const blockedUsers = await findBlockedUsersByUserId(userId);
+  const blockedSet = new Set(blockedUsers.map((b: any) => String(b.id)));
 
   for (const friendId of friendIds) {
+    // If the user has blocked this friend, NEVER broadcast presence to them
+    if (blockedSet.has(String(friendId))) {
+      continue;
+    }
+
     const friendSockets = getUserSockets(friendId);
 
     for (const friendSocket of friendSockets) {
@@ -132,9 +143,75 @@ const notifyFriends = async (
             lastSeen: lastSeen
               ? new Date(lastSeen).toISOString()
               : null,
+            isBlockedBy: false,
           })
         );
       }
+    }
+  }
+};
+
+export const notifyBlockStatusChange = async (
+  blockerId: string,
+  blockedId: string,
+  isBlocked: boolean
+) => {
+  const blockedSockets = getUserSockets(blockedId);
+  if (blockedSockets.size === 0) return;
+
+  if (isBlocked) {
+    // Blocker blocked them: report blocker as offline with no lastSeen
+    for (const socket of blockedSockets) {
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.send(
+          JSON.stringify({
+            type: "presence",
+            userId: blockerId,
+            status: "offline",
+            lastSeen: null,
+            isBlockedBy: true,
+          })
+        );
+      }
+    }
+  } else {
+    // Blocker unblocked them: report blocker's real presence
+    const online = isUserOnline(blockerId);
+    for (const socket of blockedSockets) {
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.send(
+          JSON.stringify({
+            type: "presence",
+            userId: blockerId,
+            status: online ? "online" : "offline",
+            lastSeen: null,
+            isBlockedBy: false,
+          })
+        );
+      }
+    }
+  }
+};
+
+export const sendUnreadCountToUser = async (userId: string) => {
+  const userSockets = getUserSockets(userId);
+  if (userSockets.size === 0) return;
+
+  const unreadBySender = await getUnreadCountsGroupedBySenderService(userId);
+  const unreadCount = await getUnreadMessageCount(userId);
+
+  const payload = JSON.stringify({
+    type: "unread_count",
+    data: {
+      totalUnread: unreadCount,
+      unreadBySender,
+      unreadSendersCount: Object.keys(unreadBySender).length,
+    },
+  });
+
+  for (const s of userSockets) {
+    if (s.readyState === WebSocket.OPEN) {
+      s.send(payload);
     }
   }
 };
@@ -215,22 +292,46 @@ export const initializeWebSocket = (server: Server) => {
         // Send current presence of all friends to the connecting user
         const friends = await findFriendsByUserId(decoded.userId);
         for (const friend of friends) {
-          const isFriendOnline = isUserOnline(friend.id);
-          socket.send(
-            JSON.stringify({
-              type: "presence",
-              userId: friend.id,
-              status: isFriendOnline ? "online" : "offline",
-              lastSeen: friend.last_seen
-                ? new Date(friend.last_seen).toISOString()
-                : null,
-            })
+          // If friend has blocked connecting user, friend appears offline with no lastSeen
+          const friendBlockedMe = await findBlockedUser(
+            friend.id,
+            decoded.userId
           );
+
+          if (friendBlockedMe) {
+            socket.send(
+              JSON.stringify({
+                type: "presence",
+                userId: friend.id,
+                status: "offline",
+                lastSeen: null,
+                isBlockedBy: true,
+              })
+            );
+          } else {
+            const isFriendOnline = isUserOnline(friend.id);
+            socket.send(
+              JSON.stringify({
+                type: "presence",
+                userId: friend.id,
+                status: isFriendOnline ? "online" : "offline",
+                lastSeen: friend.last_seen
+                  ? new Date(friend.last_seen).toISOString()
+                  : null,
+                isBlockedBy: false,
+              })
+            );
+          }
         }
 
-        // Deliver any pending "sent" messages to this user and notify senders
+        // Deliver any pending "sent" messages to this user and notify senders (excluding senders blocked by this receiver)
+        const myBlockedUsers = await findBlockedUsersByUserId(decoded.userId);
+        const myBlockedIds = myBlockedUsers.map((b: any) => String(b.id));
         const newlyDelivered =
-          await markMessagesAsDeliveredForReceiver(decoded.userId);
+          await markMessagesAsDeliveredForReceiver(
+            decoded.userId,
+            myBlockedIds
+          );
         for (const delMsg of newlyDelivered) {
           const senderSockets = getUserSockets(delMsg.senderId);
           for (const senderSocket of senderSockets) {
@@ -245,19 +346,7 @@ export const initializeWebSocket = (server: Server) => {
           }
         }
 
-        const unreadCount =
-          await getUnreadMessageCount(
-            decoded.userId
-          );
-
-        socket.send(
-          JSON.stringify({
-            type: "unread_count",
-            data: {
-              totalUnread: unreadCount,
-            },
-          })
-        );
+        await sendUnreadCountToUser(decoded.userId);
 
         socket.on(
           "message",
@@ -302,6 +391,16 @@ export const initializeWebSocket = (server: Server) => {
                   return;
                 }
 
+                // If receiver has blocked sender, do not forward typing event
+                const receiverBlockedSender = await findBlockedUser(
+                  receiverId,
+                  senderId
+                );
+
+                if (receiverBlockedSender) {
+                  return;
+                }
+
                 const receiverSockets =
                   getUserSockets(
                     receiverId
@@ -343,6 +442,16 @@ export const initializeWebSocket = (server: Server) => {
                     })
                   );
 
+                  return;
+                }
+
+                // If receiver has blocked sender, do not forward stopped_typing event
+                const receiverBlockedSender = await findBlockedUser(
+                  receiverId,
+                  senderId
+                );
+
+                if (receiverBlockedSender) {
                   return;
                 }
 
@@ -410,57 +519,74 @@ export const initializeWebSocket = (server: Server) => {
                     content
                   );
 
+                // Check if receiver has blocked sender
+                const receiverBlockedSender = await findBlockedUser(
+                  receiverId,
+                  senderId
+                );
+
                 let messageToSend =
-                  savedMessage.toObject();
+                  savedMessage.toObject ? savedMessage.toObject() : savedMessage;
 
-                const receiverSockets =
-                  getUserSockets(
-                    receiverId
-                  );
-
-                const receiverIsOnline =
-                  receiverSockets.size >
-                  0;
-
-                if (receiverIsOnline) {
-                  const deliveredMessage =
-                    await updateStatus(
-                      savedMessage._id.toString(),
-                      receiverId,
-                      "delivered"
+                // Only deliver to receiver if receiver has NOT blocked sender
+                if (!receiverBlockedSender) {
+                  const receiverSockets =
+                    getUserSockets(
+                      receiverId
                     );
 
-                  if (deliveredMessage) {
-                    messageToSend =
-                      deliveredMessage;
-                  }
+                  const receiverIsOnline =
+                    receiverSockets.size >
+                    0;
 
-                  for (
-                    const receiverSocket of receiverSockets
-                  ) {
-                    if (
-                      receiverSocket.readyState ===
-                      WebSocket.OPEN
-                    ) {
-                      receiverSocket.send(
-                        JSON.stringify({
-                          type:
-                            "message",
-                          data:
-                            messageToSend,
-                        })
+                  if (receiverIsOnline) {
+                    const deliveredMessage =
+                      await updateStatus(
+                        savedMessage._id.toString(),
+                        receiverId,
+                        "delivered"
                       );
+
+                    if (deliveredMessage) {
+                      messageToSend =
+                        deliveredMessage;
                     }
+
+                    for (
+                      const receiverSocket of receiverSockets
+                    ) {
+                      if (
+                        receiverSocket.readyState ===
+                        WebSocket.OPEN
+                      ) {
+                        receiverSocket.send(
+                          JSON.stringify({
+                            type:
+                              "message",
+                            data:
+                              messageToSend,
+                          })
+                        );
+                      }
+                    }
+
+                    await sendUnreadCountToUser(receiverId);
                   }
                 }
 
-                socket.send(
-                  JSON.stringify({
-                    type: "message",
-                    data:
-                      messageToSend,
-                  })
-                );
+                // Echo back to all of sender's sockets
+                const senderSockets = getUserSockets(senderId);
+                for (const senderSocket of senderSockets) {
+                  if (senderSocket.readyState === WebSocket.OPEN) {
+                    senderSocket.send(
+                      JSON.stringify({
+                        type: "message",
+                        data:
+                          messageToSend,
+                      })
+                    );
+                  }
+                }
 
                 return;
               }
@@ -552,6 +678,43 @@ export const initializeWebSocket = (server: Server) => {
                     );
                   }
                 }
+
+                // Send updated unread count to current user
+                await sendUnreadCountToUser(senderId);
+
+                return;
+              }
+
+              if (message.type === "read_conversation") {
+                const { contactId } = message;
+                if (!contactId) return;
+
+                const conversationId = generateConversationId(
+                  senderId,
+                  contactId
+                );
+
+                const readMessages = await markConversationAsReadService(
+                  conversationId,
+                  senderId
+                );
+
+                if (readMessages.length > 0) {
+                  const originalSenderSockets = getUserSockets(contactId);
+                  for (const readMsg of readMessages) {
+                    const readEvent = JSON.stringify({
+                      type: "message_read",
+                      data: readMsg,
+                    });
+                    for (const s of originalSenderSockets) {
+                      if (s.readyState === WebSocket.OPEN) {
+                        s.send(readEvent);
+                      }
+                    }
+                  }
+                }
+
+                await sendUnreadCountToUser(senderId);
 
                 return;
               }
@@ -813,4 +976,58 @@ export const initializeWebSocket = (server: Server) => {
   );
 
   return wss;
+};
+
+export const broadcastWebSocketMessage = async (savedMessage: any) => {
+  const msgObj =
+    typeof savedMessage.toObject === "function"
+      ? savedMessage.toObject()
+      : savedMessage;
+
+  const senderId = String(msgObj.senderId);
+  const receiverId = String(msgObj.receiverId);
+
+  const receiverBlockedSender = await findBlockedUser(receiverId, senderId);
+  let messageToSend = { ...msgObj };
+
+  if (!receiverBlockedSender) {
+    const receiverSockets = getUserSockets(receiverId);
+    const receiverIsOnline = receiverSockets.size > 0;
+
+    if (receiverIsOnline) {
+      const deliveredMessage = await updateStatus(
+        String(msgObj._id),
+        receiverId,
+        "delivered"
+      );
+      if (deliveredMessage) {
+        messageToSend = deliveredMessage;
+      }
+
+      for (const receiverSocket of receiverSockets) {
+        if (receiverSocket.readyState === WebSocket.OPEN) {
+          receiverSocket.send(
+            JSON.stringify({
+              type: "message",
+              data: messageToSend,
+            })
+          );
+        }
+      }
+
+      await sendUnreadCountToUser(receiverId);
+    }
+  }
+
+  const senderSockets = getUserSockets(senderId);
+  for (const senderSocket of senderSockets) {
+    if (senderSocket.readyState === WebSocket.OPEN) {
+      senderSocket.send(
+        JSON.stringify({
+          type: "message",
+          data: messageToSend,
+        })
+      );
+    }
+  }
 };

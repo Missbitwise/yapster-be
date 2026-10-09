@@ -4,7 +4,8 @@ export const createMessage = async (
   conversationId: string,
   senderId: string,
   receiverId: string,
-  content: string
+  content: string,
+  deletedFor: string[] = []
 ) => {
   const message = await Message.create({
     conversationId,
@@ -12,6 +13,7 @@ export const createMessage = async (
     receiverId,
     content,
     status: "sent",
+    deletedFor,
   });
 
   return message;
@@ -134,30 +136,47 @@ export const deleteMessageForEveryone = async (
 };
 
 export const countUnreadMessagesByUserId = async (
-  userId: string
+  userId: string,
+  blockedSenderIds: string[] = []
 ) => {
-  return await Message.countDocuments({
+  const query: any = {
     receiverId: userId,
     status: { $ne: "read" },
-  });
+    deletedFor: { $ne: userId },
+  };
+
+  if (blockedSenderIds.length > 0) {
+    query.senderId = { $nin: blockedSenderIds };
+  }
+
+  return await Message.countDocuments(query);
 };
 
 export const markMessagesAsDeliveredForReceiver = async (
-  receiverId: string
+  receiverId: string,
+  blockedSenderIds: string[] = []
 ) => {
-  const sentMessages = await Message.find({
+  const query: any = {
     receiverId,
     status: "sent",
-  }).lean();
+    deletedFor: { $ne: receiverId },
+  };
+
+  if (blockedSenderIds.length > 0) {
+    query.senderId = { $nin: blockedSenderIds };
+  }
+
+  const sentMessages = await Message.find(query).lean();
 
   if (sentMessages.length === 0) {
     return [];
   }
 
+  const idsToUpdate = sentMessages.map((msg) => msg._id);
+
   await Message.updateMany(
     {
-      receiverId,
-      status: "sent",
+      _id: { $in: idsToUpdate },
     },
     {
       $set: { status: "delivered" },
@@ -168,4 +187,68 @@ export const markMessagesAsDeliveredForReceiver = async (
     ...msg,
     status: "delivered" as const,
   }));
+};
+
+export const markConversationMessagesAsRead = async (
+  conversationId: string,
+  receiverId: string
+) => {
+  const unreadMessages = await Message.find({
+    conversationId,
+    receiverId,
+    status: { $ne: "read" },
+    deletedFor: { $ne: receiverId },
+  }).lean();
+
+  if (unreadMessages.length === 0) {
+    return [];
+  }
+
+  const ids = unreadMessages.map((m) => m._id);
+
+  await Message.updateMany(
+    {
+      _id: { $in: ids },
+    },
+    {
+      $set: { status: "read" },
+    }
+  );
+
+  return unreadMessages.map((msg) => ({
+    ...msg,
+    status: "read" as const,
+  }));
+};
+
+export const getUnreadCountsGroupedBySender = async (
+  userId: string,
+  blockedSenderIds: string[] = []
+) => {
+  const match: any = {
+    receiverId: userId,
+    status: { $ne: "read" },
+    deletedFor: { $ne: userId },
+  };
+
+  if (blockedSenderIds.length > 0) {
+    match.senderId = { $nin: blockedSenderIds };
+  }
+
+  const result = await Message.aggregate([
+    { $match: match },
+    {
+      $group: {
+        _id: "$senderId",
+        count: { $sum: 1 },
+      },
+    },
+  ]);
+
+  const map: Record<string, number> = {};
+  for (const item of result) {
+    map[String(item._id)] = item.count;
+  }
+
+  return map;
 };

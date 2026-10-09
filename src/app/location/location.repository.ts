@@ -78,6 +78,11 @@ export const findNearbyUsers = async (
 
     WHERE my_location.user_id = $1
       AND l.user_id <> $1
+      AND NOT EXISTS (
+        SELECT 1 FROM blocked_users bu
+        WHERE (bu.blocker_id = $1 AND bu.blocked_id = l.user_id)
+           OR (bu.blocker_id = l.user_id AND bu.blocked_id = $1)
+      )
 
       AND earth_distance(
         ll_to_earth(my_location.latitude, my_location.longitude),
