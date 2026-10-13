@@ -10,7 +10,10 @@ import {
 } from "./message.service.js";
 
 import { generateConversationId } from "../../common/utils/conversation.js";
-import { broadcastWebSocketMessage } from "../../websocket/websocket.server.js";
+import {
+  broadcastWebSocketMessage,
+  sendUnreadCountToUser,
+} from "../../websocket/websocket.server.js";
 
 export const sendMessageController = async (
   req: Request,
@@ -268,6 +271,23 @@ export const markConversationAsReadController = async (
     );
 
     const totalUnread = await getUnreadMessageCount(userId);
+    try {
+      await sendUnreadCountToUser(userId);
+    } catch (notifyError) {
+      console.error("[message:read] failed to publish unread summary", {
+        userId,
+        error:
+          notifyError instanceof Error
+            ? notifyError.message
+            : String(notifyError),
+      });
+    }
+    console.info("[message:read] conversation marked read", {
+      userId,
+      contactId,
+      readCount: readMessages.length,
+      totalUnread,
+    });
 
     return res.status(200).json({
       success: true,

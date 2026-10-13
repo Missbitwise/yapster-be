@@ -16,6 +16,15 @@ export const createMessage = async (
     deletedFor,
   });
 
+  console.info("[message:mongo] insert completed", {
+    database: Message.db.name,
+    collection: Message.collection.name,
+    messageId: String(message._id),
+    senderId,
+    receiverId,
+    deletedFor,
+  });
+
   return message;
 };
 
@@ -32,6 +41,16 @@ export const findMessagesByConversationId = async (
     },
   };
 
+  console.info("[message:history] querying MongoDB", {
+    database: Message.db.name,
+    collection: Message.collection.name,
+    conversationId,
+    userId,
+    limit,
+    cursor: cursor ?? null,
+    excludedForUser: userId,
+  });
+
   if (cursor) {
     query._id = {
       $lt: cursor,
@@ -45,6 +64,13 @@ export const findMessagesByConversationId = async (
     })
     .limit(limit + 1)
     .lean();
+
+  console.info("[message:history] MongoDB query complete", {
+    conversationId,
+    userId,
+    count: messages.length,
+    ids: messages.map((message: any) => String(message._id)),
+  });
 
   const hasMore = messages.length > limit;
 

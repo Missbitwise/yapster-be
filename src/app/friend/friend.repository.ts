@@ -264,7 +264,8 @@ export const findFriendsByUserId = async (
       CASE
         WHEN EXISTS (
           SELECT 1 FROM blocked_users bu
-          WHERE bu.blocker_id = u.id AND bu.blocked_id = $1
+          WHERE (bu.blocker_id = u.id AND bu.blocked_id = $1)
+             OR (bu.blocker_id = $1 AND bu.blocked_id = u.id)
         ) THEN NULL
         ELSE u.last_seen
       END AS last_seen,
@@ -329,8 +330,6 @@ export const blockUser = async (
       [blockerId, blockedId]
     );
 
-    // Note: Do NOT delete records from friends table.
-    // Keeping the friendship ensures that when unblocked, the friend and conversation remain intact.
 
     await client.query("COMMIT");
 
@@ -382,7 +381,6 @@ export const deleteBlockedUser = async (
       [blockerId, blockedId]
     );
 
-    // Restore mutual friendship so they are friends again and can continue chatting immediately
     await client.query(
       `
       INSERT INTO friends (

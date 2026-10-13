@@ -23,6 +23,13 @@ export const sendMessage = async (
   receiverId: string,
   content: string
 ) => {
+  console.info("[message:send] request accepted for validation", {
+    conversationId,
+    senderId,
+    receiverId,
+    contentLength: content.length,
+  });
+
   if (!content.trim()) {
     throw new Error(
       "Message content cannot be empty"
@@ -41,48 +48,66 @@ export const sendMessage = async (
   );
 
   if (!areFriends) {
+    console.warn("[message:send] rejected: users are not friends", {
+      senderId,
+      receiverId,
+    });
     throw new Error(
       "You can only send messages to your friends"
     );
   }
 
-  // Check if sender has blocked receiver
   const senderBlockedReceiver = await findBlockedUser(
     senderId,
     receiverId
   );
 
   if (senderBlockedReceiver) {
+    console.warn("[message:send] rejected: sender blocked receiver", {
+      senderId,
+      receiverId,
+    });
     throw new Error(
       "You have blocked this user. Unblock them to send a message."
     );
   }
 
-  // Check if receiver has blocked sender
   const receiverBlockedSender = await findBlockedUser(
     receiverId,
     senderId
   );
 
   if (receiverBlockedSender) {
-    // WhatsApp behavior: Blocked sender CAN send messages.
-    // Message is saved with status 'sent', but deletedFor receiver so receiver never receives or sees it.
-    // Message stays permanently at 'sent' (single tick) for sender.
-    return await createMessage(
+    const savedMessage = await createMessage(
       conversationId,
       senderId,
       receiverId,
       content.trim(),
       [receiverId]
     );
+    console.info("[message:send] saved for blocked sender; hidden from receiver", {
+      messageId: String(savedMessage._id),
+      senderId,
+      receiverId,
+      deletedFor: [receiverId],
+      status: savedMessage.status,
+    });
+    return savedMessage;
   }
 
-  return await createMessage(
+  const savedMessage = await createMessage(
     conversationId,
     senderId,
     receiverId,
     content.trim()
   );
+  console.info("[message:send] saved", {
+    messageId: String(savedMessage._id),
+    senderId,
+    receiverId,
+    status: savedMessage.status,
+  });
+  return savedMessage;
 };
 
 export const getConversationMessages = async (
