@@ -1,6 +1,6 @@
 import bcrypt from "bcrypt";
-import { RegisterUserDTO } from "./user.dto.js";
-import { createUser, findUserById } from "./user.repository.js";
+import { RegisterUserDTO, UpdateUserDTO } from "./user.dto.js";
+import { createUser, findUserById, updateUserProfile as updateUserProfileRepository } from "./user.repository.js";
 import jwt from "jsonwebtoken";
 import { LoginDTO } from "./user.dto.js";
 import { findUserByEmail } from "./user.repository.js";
@@ -12,11 +12,25 @@ export const registerUser = async (userData: RegisterUserDTO) => {
 
   const user = await createUser({
     name,
-    username,
+    username: username.trim().toLowerCase(),
     email,
     passwordHash,
   });
 
+  return user;
+};
+
+export const updateUserProfile = async (userId: string, userData: UpdateUserDTO) => {
+  if (!userData.name?.trim() || !userData.username?.trim()) {
+    throw new Error("Name and username are required");
+  }
+  const user = await updateUserProfileRepository(userId, {
+    ...userData,
+    name: userData.name.trim(),
+    username: userData.username.trim().toLowerCase(),
+    bio: userData.bio?.trim() ?? "",
+  });
+  if (!user) throw new Error("User not found");
   return user;
 };
 
@@ -40,15 +54,7 @@ export const loginUser = async (data: LoginDTO) => {
     throw new Error("JWT_SECRET is not configured");
   }
 
-  const token = jwt.sign(
-    {
-      userId: user.id,
-    },
-    process.env.JWT_SECRET,
-    {
-      expiresIn: "7d",
-    }
-  );
+  const token = createAuthToken(user.id);
 
   return {
     user: {
@@ -61,6 +67,13 @@ export const loginUser = async (data: LoginDTO) => {
     },
     token,
   };
+};
+
+export const createAuthToken = (userId: string) => {
+  if (!process.env.JWT_SECRET) {
+    throw new Error("JWT_SECRET is not configured");
+  }
+  return jwt.sign({ userId }, process.env.JWT_SECRET, { expiresIn: "7d" });
 };
 
 export const getUserById = async (userId: string) => {
