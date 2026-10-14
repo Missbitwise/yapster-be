@@ -13,6 +13,7 @@ import { generateConversationId } from "../../common/utils/conversation.js";
 import {
   broadcastWebSocketMessage,
   sendUnreadCountToUser,
+  notifyMessagesRead,
 } from "../../websocket/websocket.server.js";
 
 export const sendMessageController = async (
@@ -269,6 +270,8 @@ export const markConversationAsReadController = async (
       conversationId,
       userId
     );
+
+    notifyMessagesRead(readMessages);
 
     const totalUnread = await getUnreadMessageCount(userId);
     try {
