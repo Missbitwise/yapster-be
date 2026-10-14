@@ -1,6 +1,7 @@
 import { WebSocketServer, WebSocket } from "ws";
 import { Server } from "http";
 import jwt from "jsonwebtoken";
+import { AUTH_COOKIE_NAME, getTrustedFrontendOrigins } from "../common/utils/auth-cookie.js";
 
 import {
   sendMessage,
@@ -243,6 +244,21 @@ export const sendUnreadCountToUser = async (userId: string) => {
   }
 };
 
+export const notifyMessagesRead = (messages: any[]) => {
+  for (const message of messages) {
+    const payload = JSON.stringify({
+      type: "message_read",
+      data: message,
+    });
+    const senderSockets = getUserSockets(String(message.senderId));
+    for (const socket of senderSockets) {
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.send(payload);
+      }
+    }
+  }
+};
+
 export const initializeWebSocket = (server: Server) => {
   const wss = new WebSocketServer({
     server,
@@ -255,12 +271,18 @@ export const initializeWebSocket = (server: Server) => {
       request
     ) => {
       try {
-        const url = new URL(
-          request.url || "",
-          "http://localhost"
-        );
+        const origin = request.headers.origin;
+        if (!origin || !getTrustedFrontendOrigins().includes(origin)) {
+          socket.close(1008, "Origin not allowed");
+          return;
+        }
 
-        const token = url.searchParams.get("token");
+        const cookieHeader = request.headers.cookie || "";
+        const token = cookieHeader
+          .split(";")
+          .map((part) => part.trim())
+          .find((part) => part.startsWith(`${AUTH_COOKIE_NAME}=`))
+          ?.slice(AUTH_COOKIE_NAME.length + 1);
 
         if (!token) {
           socket.close(
