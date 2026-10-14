@@ -7,37 +7,27 @@ import userRoutes from "./app/user/user.routes.js";
 import locationRoutes from "./app/location/location.routes.js";
 import friendRoutes from "./app/friend/friend.routes.js";
 import messageRoutes from "./app/message/message.routes.js";
+import { protectAgainstCsrf } from "./common/middlewares/csrf.middleware.js";
+import { getTrustedFrontendOrigins } from "./common/utils/auth-cookie.js";
 
 dotenv.config();
 
 const app: Application = express();
 
 app.use(helmet());
-const allowedOrigins = [
-  "http://localhost:3000",
-  "http://localhost:3001",
-  "https://yapster-fe.vercel.app",
-  ...(process.env.FRONTEND_URL ? process.env.FRONTEND_URL.split(",") : []),
-].map((o) => o.trim()).filter(Boolean);
+const allowedOrigins = getTrustedFrontendOrigins();
 
 app.use(
   cors({
     origin: (origin, callback) => {
       if (!origin) return callback(null, true);
-      const isAllowed =
-        allowedOrigins.includes(origin) ||
-        origin.endsWith(".vercel.app") ||
-        /^http:\/\/localhost:\d+$/.test(origin);
-
-      if (isAllowed) {
-        return callback(null, true);
-      }
-      return callback(null, true);
+      return callback(null, allowedOrigins.includes(origin));
     },
     credentials: true,
   })
 );
 app.use(cookieParser());
+app.use(protectAgainstCsrf);
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 

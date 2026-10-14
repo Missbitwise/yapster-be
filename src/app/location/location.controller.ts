@@ -1,5 +1,32 @@
 import { Request, Response } from "express";
-import { getNearbyUsers, updateUserLocation } from "./location.service.js";
+import {
+  getEveryone,
+  getNearbyUsers,
+  getUserLocation,
+  updateUserLocation,
+} from "./location.service.js";
+
+export const myLocation = async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const location = await getUserLocation(userId);
+    return res.status(200).json({
+      success: true,
+      message: location ? "Saved location fetched successfully" : "No saved location",
+      data: location,
+    });
+  } catch (error: any) {
+    console.error("GET SAVED LOCATION ERROR:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to fetch saved location",
+    });
+  }
+};
 
 export const updateLocation = async (
   req: Request,
@@ -64,6 +91,31 @@ export const nearbyUsers = async (
     return res.status(400).json({
       success: false,
       message: error.message || "Failed to fetch nearby users",
+    });
+  }
+};
+
+export const everyoneUsers = async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const page = Number(req.query.page ?? 1);
+    const pageSize = Number(req.query.limit ?? 24);
+    const result = await getEveryone(userId, page, pageSize);
+
+    return res.status(200).json({
+      success: true,
+      message: "Users fetched successfully",
+      data: result,
+    });
+  } catch (error: any) {
+    console.error("DISCOVER EVERYONE ERROR:", error);
+    return res.status(400).json({
+      success: false,
+      message: error.message || "Failed to discover users",
     });
   }
 };
