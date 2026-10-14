@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
+import { AUTH_COOKIE_NAME } from "../utils/auth-cookie.js";
 
 interface JwtPayload {
   userId: string;
@@ -12,15 +13,17 @@ export const authenticate = (
 ) => {
   try {
     const authHeader = req.headers.authorization;
+    const bearerToken = authHeader?.startsWith("Bearer ")
+      ? authHeader.slice("Bearer ".length)
+      : undefined;
+    const token = req.cookies?.[AUTH_COOKIE_NAME] || bearerToken;
 
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    if (!token) {
       return res.status(401).json({
         success: false,
         message: "Authentication token required",
       });
     }
-
-    const token = authHeader.split(" ")[1];
 
     if (!process.env.JWT_SECRET) {
       throw new Error("JWT_SECRET is not configured");
