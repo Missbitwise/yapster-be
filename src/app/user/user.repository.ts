@@ -41,6 +41,26 @@ export const createUser = async (userData: CreateUserData) => {
   return result.rows[0];
 };
 
+export const updateUserProfile = async (
+  userId: string,
+  userData: { name: string; username: string; bio: string; profile_picture?: string | null }
+) => {
+  const result = await pool.query(
+    `
+    UPDATE users
+    SET name = $2,
+        username = $3,
+        bio = $4,
+        profile_picture = $5,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = $1
+    RETURNING id, name, username, email, profile_picture, bio, last_seen, created_at, updated_at
+    `,
+    [userId, userData.name, userData.username.trim().toLowerCase(), userData.bio, userData.profile_picture ?? null]
+  );
+  return result.rows[0] || null;
+};
+
 export const findUserByEmail = async (email: string) => {
   const result = await pool.query(
     `
