@@ -1,4 +1,4 @@
-
+-- Up Migration
 CREATE EXTENSION IF NOT EXISTS cube;
 CREATE EXTENSION IF NOT EXISTS earthdistance;
 
@@ -120,3 +120,5 @@ ON blocked_users(blocked_id);
 
 CREATE INDEX idx_locations_user
 ON locations(user_id);
+
+-- Down Migration
